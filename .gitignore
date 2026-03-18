@@ -3,6 +3,8 @@
 *.exe
 *.zip
 *.sh
+!scripts/
+!scripts/*.sh
 go.work
 go.work.sum
 subspace-relay-pcsc

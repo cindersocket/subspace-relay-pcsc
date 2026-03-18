@@ -4,14 +4,22 @@ on:
   pull_request:
   push:
     tags:
-      - "*"
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  validate-release-config:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - .goreleaser.linux.yaml
+          - .goreleaser.darwin-amd64.yaml
+          - .goreleaser.darwin-arm64.yaml
+          - .goreleaser.windows.yaml
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -21,16 +29,121 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: stable
+          go-version-file: go.mod
 
-      - name: Install libpcsclite
+      - name: Install Linux dependencies
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
-      - name: Run GoReleaser
+      - name: Check GoReleaser config
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          args: check --config ${{ matrix.config }}
+
+  package:
+    needs: validate-release-config
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact_name: linux-amd64
+            runner: ubuntu-latest
+            config: .goreleaser.linux.yaml
+          - artifact_name: darwin-amd64
+            runner: macos-13
+            config: .goreleaser.darwin-amd64.yaml
+          - artifact_name: darwin-arm64
+            runner: macos-14
+            config: .goreleaser.darwin-arm64.yaml
+          - artifact_name: windows-amd64
+            runner: windows-latest
+            config: .goreleaser.windows.yaml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install Linux dependencies
+        if: (github.actor != 'nektos/act' || matrix.artifact_name == 'linux-amd64') && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev rpm
+
+      - name: Compute GoReleaser args
+        if: github.actor != 'nektos/act' || matrix.artifact_name == 'linux-amd64'
+        id: goreleaser_args
+        shell: bash
+        run: |
+          args="release --clean --skip=publish --config ${{ matrix.config }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            args="$args --snapshot"
+          fi
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      - name: Run GoReleaser
+        if: github.actor != 'nektos/act' || matrix.artifact_name == 'linux-amd64'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: ${{ steps.goreleaser_args.outputs.args }}
+
+      - name: Smoke test packaged binary
+        if: github.actor != 'nektos/act' || matrix.artifact_name == 'linux-amd64'
+        shell: bash
+        run: |
+          mkdir -p smoke
+          archive="$(find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) | head -n 1)"
+          tar -xf "$archive" -C smoke
+
+          case "${{ runner.os }}" in
+            Windows)
+              binary="$(find smoke -type f -name 'subspace-relay-pcsc.exe' | head -n 1)"
+              ;;
+            *)
+              binary="$(find smoke -type f -name 'subspace-relay-pcsc' | head -n 1)"
+              chmod +x "$binary"
+              ;;
+          esac
+
+          "$binary" -version
+          "$binary" -h >/dev/null
+
+      - name: Inspect Linux packages
+        if: (github.actor != 'nektos/act' || matrix.artifact_name == 'linux-amd64') && runner.os == 'Linux'
+        shell: bash
+        run: |
+          deb="$(find dist -type f -name '*.deb' | head -n 1)"
+          rpm_pkg="$(find dist -type f -name '*.rpm' | head -n 1)"
+          dpkg-deb --contents "$deb" >/dev/null
+          rpm -qpl "$rpm_pkg" >/dev/null
+
+      - name: Upload packaged artifacts
+        if: (github.actor != 'nektos/act' || matrix.artifact_name == 'linux-amd64') && github.actor != 'nektos/act'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/**/*
+          fail_on_unmatched_files: true

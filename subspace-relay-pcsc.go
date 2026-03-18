@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"flag"
+	"fmt"
 	"github.com/ansel1/merry/v2"
 	"github.com/ebfe/scard"
 	"github.com/eclipse/paho.golang/paho"
@@ -24,6 +25,9 @@ import (
 // This can be set at build time using the following go build command:
 // go build -ldflags="-X 'main.defaultBrokerURL=mqtts://user:pass@example.com:1234'"
 var defaultBrokerURL string
+var version = "dev"
+var commit = "unknown"
+var date = "unknown"
 
 const appName = "subspace-relay-pcsc"
 
@@ -35,8 +39,14 @@ func main() {
 		brokerFlag   = flag.String("broker-url", "", "MQTT Broker URL")
 		discovery    = flag.Bool("discovery.plaintext", false, "Enable plaintext discovery")
 		pubKeyString = flag.String("discovery.secure", "", "Enable secure discovery by the provided ECDH key only (hex bytes)")
+		versionFlag  = flag.Bool("version", false, "Print version information")
 	)
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("%s version=%s commit=%s date=%s\n", appName, version, commit, date)
+		return
+	}
 
 	srlog.InitLogger(appName)
 

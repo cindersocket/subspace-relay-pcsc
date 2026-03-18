@@ -1,5 +1,4 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-# vim: set ts=2 sw=2 tw=0 fo=cnqoj
 
 version: 2
 
@@ -8,33 +7,30 @@ before:
     - go mod download
 
 builds:
-  - env:
+  - id: windows-amd64
+    binary: subspace-relay-pcsc
+    env:
       - CGO_ENABLED=0
     flags:
       - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .Date }}
     goos:
-      - linux
       - windows
     goarch:
       - amd64
-    overrides:
-      - goos: linux
-        goarch: amd64
-        env:
-          - CGO_ENABLED=1
 
 archives:
-  - formats: [tar.gz]
+  - ids:
+      - windows-amd64
+    formats:
+      - zip
+    files:
+      - LICENSE
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
-    format_overrides:
-      - goos: windows
-        formats: [zip]
+      {{- if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
 
 changelog:
   sort: asc
