@@ -172,6 +172,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           assets=(
@@ -182,13 +183,15 @@ jobs:
             release-assets/*_checksums.txt
           )
 
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          if gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber --repo "$GH_REPO"
             gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GH_REPO" \
               --title "$GITHUB_REF_NAME" \
               --notes-file release-assets/CHANGELOG.md
           else
             gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --repo "$GH_REPO" \
               --verify-tag \
               --title "$GITHUB_REF_NAME" \
               --notes-file release-assets/CHANGELOG.md
