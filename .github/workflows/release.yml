@@ -52,7 +52,7 @@ jobs:
             runner: ubuntu-latest
             config: .goreleaser.linux.yaml
           - artifact_name: darwin-amd64
-            runner: macos-13
+            runner: macos-15-intel
             config: .goreleaser.darwin-amd64.yaml
           - artifact_name: darwin-arm64
             runner: macos-14
@@ -100,7 +100,15 @@ jobs:
         run: |
           mkdir -p smoke
           archive="$(find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) | head -n 1)"
-          tar -xf "$archive" -C smoke
+
+          case "${archive}" in
+            *.zip)
+              unzip -q "$archive" -d smoke
+              ;;
+            *)
+              tar -xf "$archive" -C smoke
+              ;;
+          esac
 
           case "${{ runner.os }}" in
             Windows)
